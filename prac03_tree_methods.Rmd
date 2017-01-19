@@ -1,0 +1,232 @@
+---
+title: "Tree-Based Methods For Big (and small) Data"
+author: "Miles McBain"
+date: "1/18/2017"
+output: html_document
+---
+#Prerequisites
+```{r, eval=FALSE}
+install.packages(c("rpart.plot", "randomForest"))
+```
+
+
+```{r, message=FALSE}
+library(rpart)
+library(readr)
+library(knitr)
+library(rpart.plot)
+library(dplyr)
+library(randomForest)
+
+#For your laptop sfdaf
+#PRAC_HOME <- here::here()
+#For the lab computer
+PRAC_HOME <- "/users/ugrad/amsi_705/MSBigData/Practicals/prac03"
+```
+
+
+#Introduction
+In this practical we introduce tree-based approaches with CARTS on a classic data set, then progressing to more advanced tree methods in the Big Data context.
+
+## CARTs
+
+### Surviving the Titanic
+The passenger list of those aboard the *RMS Titanic* when disaster struck provides an interesting data set for the application of CARTs to explore relationships between survival and other passenger attributes. 
+
+It's also a great opportunity to check out the analysis of this dataset on [Kaggle](https://www.kaggle.com/c/titanic/details/new-getting-started-with-r).
+
+**Discuss:**
+
+* Based on either historical fact or Hollywood fiction, what are passenger attributes that you would expect to be associated with death or survival? 
+
+###Load Data
+```{r, message=FALSE}
+titanic_data <- read_csv(file.path(PRAC_HOME, "data/train.csv"))
+kable(titanic_data[1:10,])
+```
+
+**Discussion**
+
+* To look at passenger survival what kind of model will we fit? 
+   - Classification, Regression, Clustering, Dimension Reduction etc?
+   - Is it supervised or unsupervised?
+
+### Create a CART
+Initially we'll just fit a CART based on `Pclass`, `Sex`, and `Age`.
+```{r}
+CART_model <- tree_fit_titanic <- rpart(Survived ~ Pclass + Sex + Age,
+                          data = titanic_data,
+                          method = "class",
+                          control = rpart.control(cp = 0.01, xval = 10)
+                            )
+rpart.plot(tree_fit_titanic)
+```
+
+Experiment with the cost-complexity parameter `cp`. In the context of fitting, it controls the size of the tree by setting a threshold of fit improvement that must be met for a node to be added. A lower CP will allow more complex trees to be fit.
+
+Tree models can be pruned to a given cost-complexity after fitting using the `prune()` function.
+
+*Discussion*:
+
+* What do you make of the `xval` parameter?
+
+### CART diagnostics
+Try `summary()` but observe that it is not very useful. Plotting the cross-validation error associated with various tree sizes can be used to verify the choice of tree size:
+```{r}
+plotcp(tree_fit_titanic)
+```
+
+We can also make use of `caret::confusionMatrix()` again from the previous practical to check the classification performance.
+
+### Exercise
+Experiment with adding other covariates from the dataset and observe their effect on predictive accuracy and how that flows through to tree structure.
+
+**Discuss**:
+
+* What seems to have the most impact on survivorship? Does this agree with you initial guess?
+
+
+### Random Forests
+The data for this analysis are real records from a telemarketing campaign run by a Spanish bank. The data contain the records for 32000 calls to banking customers. A bank may collect data like this from a 'pilot' campaign based on customers selected by stratified random sample. The data contain a 0/1 indicator variable which represents the failure/success of the customer accepting the proposed offer
+
+
+#### Load Data
+```{r}
+bank_data <- read_csv2(file.path(PRAC_HOME, "data/bank-additional-full.csv"),
+                       guess_max = 10000) #why guess max? try removing it to understand.
+kable(bank_data[1:10,])
+```
+
+A description of the variables in the data is avail able in [./data/bannk-additional-names.txt](./data/bannk-additional-names.txt).
+
+#### Labwork
+In the lab we'll use some R packages. Code and instructions for H2O are attached below in the homework section for you to try on your own computer. 
+
+##### Data processing
+`randomForest` requires factors and numbers. By default the text variables will be considered by `read_csv` as character type, so we need to convert them to factors.
+
+```{r}
+bank_data_factor <- 
+  bank_data %>%
+  mutate_if(is.character, as.factor) %>%
+  select(-duration)
+```
+We also removed one variable: `duration` from out data set. **Why is this?**
+
+##### Fit a randomForest
+```{r}
+
+rf_model <- randomForest(formula = y ~ ., 
+                                        data = bank_data_factor,
+                                        ntree = 500,
+                                        mtry = 4)
+```
+
+Examine the `rf_model` object to see model performance measures. We can use `predict()` to get the predictions. `confusionMatrix` is an option.
+ 
+Some useful plots are available with `varImpPlot(rf_model)` and `plot(rf_model)`.
+
+**Discuss**:
+
+* Which are the most important variables in determining the whether the customer would accept the offer?
+* How can we make determine the effects of these variables?
+
+
+##### Tuning a Random Forest
+The choice of parameter `mtry` was arbitrary. A more robust approach is to select it via a search of possible choices. There is a function `tuneRF()` in the `randomForest` package that is provided for just this purpose. Use it to select the best `mtry`.
+
+**Discuss**
+* Was the forest fitted with optimal `mtry` more accurate? 
+* How do you rate the final model you arrived at for the task of identifying customers to call?
+
+
+#### Homework (on your PC)
+Start by replicating the above on H20. After that we will try a gradient boosted machine.
+
+##### Setup
+
+```{r, eval=FALSE}
+install.packages("h2o")
+```
+
+##### Load and test H2O
+```{r, eval=FALSE}
+library(h2o)
+localh2o <- h2o.init(min_mem_size = "512m", max_mem_size = "1g")  
+```
+You can navigate to http://127.0.0.1:54321 to check that H2O is running. This is a web interface to your H2O session. You may like to experiement performing some tasks in it instead of R.
+
+##### Load data to H2O
+Since we already have data in R we can push it to H2O without reloading it. However
+we can instruct R to load data directly to H2O without touching the R session with `h2o.uploadFile()`. This may be useful for big data files.
+
+```{r, eval=FALSE}
+bank_data_h2o <- as.h2o(bank_data_factor, destination_frame = "bank_data_factor")
+```
+
+##### Fit the Random Forest
+```{r, eval=FALSE}
+h2o_rf_model <- h2o.randomForest(y = "y",
+                 training_frame = bank_data_h2o,
+                 nfolds = 5,
+                 ntrees = 50,
+                 max_depth = 20,
+                 mtries = 4
+                 )
+```
+
+**Discuss**
+
+* What is the use of the `nfolds` argument?
+
+##### Viewing the summary
+A large amount of information is available for the fitted model.
+```{r, eval=FALSE}
+summary(h2o_rf_model)
+```
+
+**Discuss**
+
+* Which of these can you make an interpretation of?
+* Are they consistent with random forest in R?
+
+##### Grid search
+
+As before, we have made artbitrary choice of model parameters. H20 provides a function: `h2o.grid()` to facilitate grid search over parameter values for optimal choices. This can be quite time consuming. Note that `x` and `y` only accept column positions using this interface.
+
+The following code will fit 3 cross-validated random forests with `mtries` = 2,4,7.
+
+```{r, eval=FALSE}
+h2o_grid_search <- h2o.grid("randomForest", 
+         y = which((names(bank_data_h2o) == "y")),
+         x = which(!(names(bank_data_h2o) == "y")),
+         training_frame = bank_data_h2o,
+         nfolds = 5,
+         ntrees = 50,
+         max_depth = 20,
+         hyper_params = list(mtries = c(2,4,7))
+         )
+```
+
+Inspect `h2o_grid_search` to obtain the results. 
+
+**Discuss**
+
+* H2O reports the logloss statistic. What is the log loss? 
+* Which choice of `mtries` is optimal? How does the optimal model perform relative to the original one?
+
+#####Extension - Gradient Boosted Tree
+A gradient boosted tree can be fitted with `h2o.gbm()`. It has an interface very similar to `h2o.randomForest()`. In this context the 
+`learn_rate` parameter is the one that needs to be searched for the optimal value.
+
+Using the same process as above use grid search to find the best of learn rate between 0.01, 0.1, and 0.5. Compare the best gradient boosted tree to the best random forest using their classification performance metrics.
+
+Which algorithm performs best on this dataset? You may wish to look at some of the results in the H2O flow interface. Models fit in R will be viewable there at http://127.0.0.1:54321. H2O flow will automatically produce ROC curves and other plots.
+
+#####Stop H2O
+```{r, eval=FALSE}
+h2o.shutdown()
+```
+
+
+
