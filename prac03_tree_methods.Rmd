@@ -20,7 +20,7 @@ library(randomForest)
 
 #For your laptop sfdaf
 #PRAC_HOME <- here::here()
-#For the lab computer
+#For the lab computer sdfad
 PRAC_HOME <- "/users/ugrad/amsi_705/MSBigData/Practicals/prac03"
 ```
 
